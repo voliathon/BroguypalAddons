@@ -4,7 +4,7 @@
 _addon.name    = 'TrueTargetLock'
 _addon.author  = 'Broguypal'
 _addon.version = '1.1'
-_addon.commands = {'truetargetlock'}
+_addon.commands = {'lock'}
 
 -- Throttle settings (edit here if desired)
 local TURN_INTERVAL = 0.10     -- seconds between turn attempts
@@ -53,37 +53,51 @@ windower.register_event('addon command', function(cmd)
         config.save(settings)
         windower.add_to_chat(207, '[TrueTargetLock] Mode: NORMAL (Default).')
     else
-        windower.add_to_chat(207, '[TrueTargetLock] Commands: //truetargetlock always  |  //truetargetlock normal')
+        windower.add_to_chat(207, '[TrueTargetLock] Commands: //lock always  |  //lock normal')
         windower.add_to_chat(207, '[TrueTargetLock] Current mode: '..MODE)
     end
 end)
 
 windower.register_event('prerender', function()
     local t = os.clock()
-	
     if (t - last_turn_t) < TURN_INTERVAL then return end
 
     local pinfo = windower.ffxi.get_player()
     if not pinfo then return end
 
+    -- Only active if engaged (status 1)
     if pinfo.status ~= 1 then return end
 
+    -- Check mode settings
     if MODE == 'normal' and not pinfo.target_locked then return end
 
-    if not pinfo.target_index or pinfo.target_index == 0 then return end
+    -- GET TARGETS
+    local target = windower.ffxi.get_mob_by_target('t')
+    local btarget = windower.ffxi.get_mob_by_target('bt')
 
-    local self_vector = windower.ffxi.get_mob_by_index(pinfo.index or 0)
-    if not self_vector then return end
+    -- LOGIC: PRIORITIZE BATTLE TARGET IF CURSOR TARGET IS FRIENDLY
+    -- If I'm targeting a player (healing/buffing), stay locked on the mob I'm fighting (bt)
+    local final_target = target
+    if target and target.is_npc == false and btarget then
+        final_target = btarget
+    elseif not target and btarget then
+        final_target = btarget
+    end
 
-    local target = windower.ffxi.get_mob_by_index(pinfo.target_index)
-    if not target or target.id == 0 then return end
-    if target.hpp and target.hpp <= 0 then return end
+    -- Validation
+    if not final_target or final_target.id == 0 or final_target.hpp <= 0 then return end
 
-    local desired = desired_facing_direction(self_vector, target)
+    -- Get Player Mob
+    local player_mob = windower.ffxi.get_mob_by_target('me')
+    if not player_mob then return end
+
+    -- Calculate Angle
+    local desired = desired_facing_direction(player_mob, final_target)
     if not desired then return end
 
-    local current = self_vector.facing or self_vector.heading or 0
+    local current = player_mob.facing or 0
     local delta = math.abs(norm_pi(desired - current))
+    
     if delta < MIN_DELTA then return end
 
     windower.ffxi.turn(desired)
